@@ -1,7 +1,5 @@
 # pylint: disable=E1103
 
-import warnings
-
 from pandas import Series, DataFrame
 from pandas.core.index import MultiIndex
 from pandas.core.groupby import Grouper
