@@ -14,7 +14,7 @@ import numpy as np
 @deprecate_kwarg(old_arg_name='cols', new_arg_name='columns')
 @deprecate_kwarg(old_arg_name='rows', new_arg_name='index')
 def pivot_table(data, values=None, index=None, columns=None, aggfunc='mean',
-                fill_value=None, margins=False, dropna=True):
+                fill_value=None, margins=False, dropna=True, as_sparse=False):
     """
     Create a spreadsheet-style pivot table as a DataFrame. The levels in the
     pivot table will be stored in MultiIndex objects (hierarchical indexes) on
@@ -40,6 +40,8 @@ def pivot_table(data, values=None, index=None, columns=None, aggfunc='mean',
         Add all row / columns (e.g. for subtotal / grand totals)
     dropna : boolean, default True
         Do not include columns whose entries are all NaN
+    as_sparse : boolean, default False
+        If True, output is returned as a sparse matrix.
     rows : kwarg only alias of index [deprecated]
     cols : kwarg only alias of columns [deprecated]
 
@@ -116,7 +118,25 @@ def pivot_table(data, values=None, index=None, columns=None, aggfunc='mean',
     if table.index.nlevels > 1:
         to_unstack = [agged.index.names[i]
                       for i in range(len(index), len(keys))]
-        table = agged.unstack(to_unstack)
+        if not as_sparse:
+            table = agged.unstack(to_unstack)
+        else:
+            # return unstacked matrix as scipy.sparse_matrix
+            user_ids = agged.index.get_level_values('User ID').unique()
+            event_ids = agged.index.get_level_values('Event ID ').unique()
+            m = user_ids.nunique()
+            n = event_ids.nunique()
+            from scipy.sparse import csr_matrix
+            table = csr_matrix((m,n),dtype=np.int8)
+            for i in xrange(user_ids.shape[0]):
+                for j in xrange(event_ids.shape[0]):
+                    ix = user_ids[i]
+                    jx = event_ids[j]
+                    try:
+                        table[i,j] = agged.ix[(ix, jx)]
+                    except IndexError:
+                        pass
+            return table
 
     if not dropna:
         try:
@@ -310,7 +330,7 @@ def _convert_by(by):
 @deprecate_kwarg(old_arg_name='cols', new_arg_name='columns')
 @deprecate_kwarg(old_arg_name='rows', new_arg_name='index')
 def crosstab(index, columns, values=None, rownames=None, colnames=None,
-             aggfunc=None, margins=False, dropna=True):
+             aggfunc=None, margins=False, dropna=True, as_sparse=False):
     """
     Compute a simple cross-tabulation of two (or more) factors. By default
     computes a frequency table of the factors unless an array of values and an
@@ -334,6 +354,8 @@ def crosstab(index, columns, values=None, rownames=None, colnames=None,
         Add row/column margins (subtotals)
     dropna : boolean, default True
         Do not include columns whose entries are all NaN
+    as_sparse : boolean, default False
+        If True, output is returned as a sparse matrix.
     rows : kwarg only alias of index [deprecated]
     cols : kwarg only alias of columns [deprecated]
 
@@ -380,13 +402,15 @@ def crosstab(index, columns, values=None, rownames=None, colnames=None,
         df = DataFrame(data)
         df['__dummy__'] = 0
         table = df.pivot_table('__dummy__', index=rownames, columns=colnames,
-                               aggfunc=len, margins=margins, dropna=dropna)
+                               aggfunc=len, margins=margins, dropna=dropna,
+                               as_sparse=as_sparse)
         return table.fillna(0).astype(np.int64)
     else:
         data['__dummy__'] = values
         df = DataFrame(data)
         table = df.pivot_table('__dummy__', index=rownames, columns=colnames,
-                               aggfunc=aggfunc, margins=margins, dropna=dropna)
+                               aggfunc=aggfunc, margins=margins, dropna=dropna,
+                               as_sparse=as_sparse)
         return table
 
 
